@@ -9,8 +9,8 @@ This is a tool for cloning and updating an entire project described by a Project
 - [Usage](#usage)
   - [Overview of the options](#overview-of-the-options)
   - [Prerequisites](#prerequisites)
-  - [Cloning Project](#posting-firmware)
-  - [Updating Project](#tracking-update-status)
+  - [Cloning Project](#cloning-project)
+  - [Updating Project](#updating-project)
 - [Reference Documents](#reference-documents)
 
 ---
