@@ -67,7 +67,11 @@ Please make sure you are able to access to the remote site first.<br>
   - Please use command `ssh -T [URL]` in command prompt to test the connection.
 
 - The tool clones the entire project to where it exists. Therefore, please copy the executable file to the folder where you want to save the project.
-- If you want to run the Python script directly, please use `pip install -r requirement.txt` to install the required dependency modules.
+- If you want to run the Python script directly, please use `pip install -r requirements.txt` to install the required dependency modules.
+
+> [!NOTE]
+> This tool was developed using Python **3.13.0**. It is recommended that you use the same (or newer) version to ensure proper execution.
+> Otherwise, Python **3.12.0** is the lowest supported version.
 
 ### Cloning Project
 Assume that the board package name of the project is `H2O-Kernel/Kernel_RaptorLake_PBoard_Rev5.7`, and the desired tag is `05.70.48`.
