@@ -18,7 +18,8 @@ This is a tool for cloning and updating an entire project described by a Project
 ## Release Note
 | Date | Version | Comment |
 | :--- | :--- | :--- |
-| 2024/12/04 | 1.0 | Initial release. |
+| 2024/12/04 | v1.0-beta.1 | Initial release. |
+| 2025/04/15 | v1.0-beta.2 | Added remote check & force fetch before checkout; Fixed color display in Windows Terminal. |
 
 ## Terms and Abbreviations
 | Term | Description |

@@ -1,5 +1,5 @@
 #
-#  Copyright (c) 2024, Tony Cheng. All rights reserved.
+#  Copyright (c) 2024 - 2025, Tony Cheng. All rights reserved.
 #
 #  SPDX-License-Identifier: BSD-2-Clause-Patent
 #
@@ -7,6 +7,7 @@
 import argparse
 import colorful as cf
 import git
+import git.exc
 import os
 import shutil
 import subprocess
@@ -17,7 +18,6 @@ from argparse import ArgumentParser
 from enum import Enum
 from git import Repo, RemoteProgress
 from io import TextIOWrapper
-import git.exc
 from packaging.version import Version
 from paramiko import SSHClient, SSHConfig
 from pathlib import Path
@@ -27,13 +27,15 @@ from typing import Union, Optional
 from urllib.parse import urlparse
 from xml.etree.ElementTree import Element
 
-
 # global variables
 project_tag = None
 project_url = None
 project_path = None
 override_dict = {}
 omit_submodules = False
+
+# global settings
+cf.use_256_ansi_colors()
 
 
 class ToolAction(Enum):
@@ -228,7 +230,8 @@ def checkout_to_tag(repo: Repo, tag: str, fetch: bool = False) -> Optional[str]:
         paths = [ref.split()[1] for ref in refs]
 
         if path in paths:
-            repo.git.checkout(tag, "--detach")
+            repo.remotes.origin.fetch(tags=True, force=True)
+            repo.git.checkout(tag, detach=True)
         else:
             ColoredMessage.print(f"Warning: Tag {tag} is not available!")
     else:
@@ -369,6 +372,19 @@ def is_git_repository(folder_path: str) -> bool:
     try:
         repo = git.Repo(folder_path)
         result = not repo.bare
+
+        try:
+            repo.git.ls_remote()
+        except git.exc.GitCommandError as e:
+            url = repo.remotes["origin"].url
+            url_path = (
+                urlparse(url).path[1:] if "insyde".casefold() in url.casefold() else url
+            )
+            ColoredMessage.print(
+                f"Warning: Remote repository at '{url_path.rstrip("/")}' is no longer available!"
+            )
+            result = False
+
         repo.close()
         return result
     except git.exc.InvalidGitRepositoryError:
@@ -445,7 +461,7 @@ def process_pfc(file_path: Union[str, TextIOWrapper], action: ToolAction) -> Non
                     message = (
                         f"Requires {req[0]} at {req[1]}, but {req[2]} was detected."
                     )
-                print(cf.dimGrey(message))
+                ColoredMessage.print(f"Note: {message}")
             requirements.clear()
 
         for repository in feature.findall("Repository"):
@@ -456,6 +472,10 @@ def process_pfc(file_path: Union[str, TextIOWrapper], action: ToolAction) -> Non
                 if os.path.isdir(root) and is_git_repository(root):
                     update_repository(root, repository.find("Tag").text)
                     continue
+                else:
+                    ColoredMessage.print(f"Note: Removing {os.path.relpath(root)}")
+                    chmod_recursive(root, 0o777)
+                    shutil.rmtree(root)
 
             url = to_ssh(repository.find("Url").text)
             clone_repository(
