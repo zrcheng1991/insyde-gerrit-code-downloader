@@ -9,6 +9,7 @@ import colorful as cf
 import git
 import git.exc
 import os
+import posixpath
 import shutil
 import subprocess
 import tarfile
@@ -24,7 +25,7 @@ from pathlib import Path
 from rich import console, progress
 from scp import SCPClient
 from typing import Union, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 from xml.etree.ElementTree import Element
 
 # global variables
@@ -130,12 +131,24 @@ class GitProgressBar(RemoteProgress):
 
 
 def fetch_with_progress(
-    folder_path: str, url: str, commit_id: str, depth: int = 1
+    folder_path: str, url: str, commit_id: str = None, depth: int = 1
 ) -> bool:
     url_path = urlparse(url).path[1:] if "insyde".casefold() in url.casefold() else url
-    print(f"Fetching {commit_id} from {url_path} with depth={depth}:")
 
-    command = f"git fetch --depth {depth} origin {commit_id} --progress"
+    if commit_id is not None and depth != 0:
+        print(f"Fetching {commit_id} from {url_path} with depth={depth}:")
+        command = [
+            "git",
+            "fetch",
+            f"--depth={depth}",
+            "origin",
+            commit_id,
+            "--progress",
+        ]
+    else:
+        print(f"Fetching from {url_path}")
+        command = ["git", "fetch", "origin", "--progress"]
+
     process = subprocess.Popen(
         command,
         stdout=subprocess.PIPE,
@@ -240,7 +253,21 @@ def checkout_to_tag(repo: Repo, tag: str, fetch: bool = False) -> Optional[str]:
     return tag
 
 
-def clone_submodules(repo: Repo, folder_path: str) -> None:
+def is_relative_url(url: str) -> bool:
+    parsed_url = urlparse(url)
+    if parsed_url.scheme != "" or parsed_url.path.startswith("/"):
+        return False
+    return True
+
+
+def resolve_relative_url(base: str, rel_path: str) -> str:
+    parsed_base = urlparse(base)
+    path = posixpath.normpath(posixpath.join(parsed_base.path, rel_path))
+    parsed_base = parsed_base._replace(path=path)
+    return urlunparse(parsed_base)
+
+
+def clone_submodules(repo: Repo, folder_path: str, absorbgitdirs: bool) -> None:
     for submodule in repo.submodules:
         folder_path = os.path.normpath(os.path.join(folder_path, submodule.path))
         url = (
@@ -248,18 +275,32 @@ def clone_submodules(repo: Repo, folder_path: str) -> None:
             if "insyde".casefold() in submodule.url.casefold()
             else submodule.url
         )
+        if is_relative_url(url):
+            url = resolve_relative_url(repo.remotes.origin.url.strip(".git"), url)
 
-        submodule_repo = Repo.init(folder_path)
-        submodule_repo.create_remote("origin", url)
-        result = fetch_with_progress(folder_path, url, submodule.hexsha)
+        if absorbgitdirs:
+            submodule_repo = Repo.init(folder_path)
+            submodule_repo.create_remote("origin", url)
+            tag_shas = {tag.commit.hexsha for tag in repo.tags}
+            if submodule.hexsha in tag_shas:
+                result = fetch_with_progress(folder_path, url, submodule.hexsha)
+                if result:
+                    print(f"Checking out {folder_path} to FETCH_HEAD")
+                    submodule_repo.git.checkout("FETCH_HEAD")
+                else:
+                    ColoredMessage.print(f"Warning: Failed to fetch from server!")
+            else:
+                fetch_with_progress(folder_path, url)
+                print(f"Checking out {folder_path} to {submodule.hexsha}")
+                submodule_repo.git.checkout(submodule.hexsha)
 
-        if result:
-            print(f"Checking out {folder_path} to FETCH_HEAD")
-            submodule_repo.git.checkout("FETCH_HEAD")
+            submodule_repo.close()
         else:
-            ColoredMessage.print(f"Warning: Failed to fetch from server!")
-        submodule_repo.close()
-    pass
+            repo.git.config(
+                "--file=.gitmodules", f"submodule.{submodule.path}.url", url
+            )
+            print(f"Initializing submodule {submodule.path} ({submodule.hexsha})")
+            repo.git.submodule("update", "--init", f"{submodule.path}")
 
 
 def clone_repository(
@@ -282,7 +323,7 @@ def clone_repository(
                 get_commit_msg_hook(urlparse(url).hostname, folder_path)
 
     if len(repo.submodules) > 0 and not omit_submodules:
-        clone_submodules(repo, folder_path)
+        clone_submodules(repo, folder_path, (tag != "master"))
 
     repo.close()
 
@@ -298,7 +339,7 @@ def chmod_recursive(directory, mode):
 def remove_all_submodules(repo: Repo) -> None:
     for submodule in repo.submodules:
         path = os.path.join(repo.working_dir, submodule.path)
-        if os.path.exists(path):
+        if os.path.isdir(path):
             ColoredMessage.print(f"Note: Removing {os.path.relpath(path)}")
             chmod_recursive(path, 0o777)
             shutil.rmtree(path)
@@ -318,7 +359,7 @@ def update_repository(folder_path: str, tag: str) -> None:
             get_commit_msg_hook(urlparse(repo.remotes[0].url).hostname, folder_path)
 
     if len(repo.submodules) > 0 and not omit_submodules:
-        clone_submodules(repo, folder_path)
+        clone_submodules(repo, folder_path, (tag != "master"))
 
     repo.close()
 
@@ -468,8 +509,8 @@ def process_pfc(file_path: Union[str, TextIOWrapper], action: ToolAction) -> Non
             if repository.find("Type").text.casefold() != "git".casefold():
                 continue
 
-            if action == ToolAction.UPDATE_REPOSITORY:
-                if os.path.isdir(root) and is_git_repository(root):
+            if os.path.isdir(root):
+                if is_git_repository(root):
                     update_repository(root, repository.find("Tag").text)
                     continue
                 else:
@@ -518,15 +559,25 @@ def process_pfc(file_path: Union[str, TextIOWrapper], action: ToolAction) -> Non
         omit_submodules = original_state
 
 
-def fetch_file_from_remote(url: str, tag: str, file: str, to_path: str = "."):
+def fetch_file_from_remote(url: str, tag: str, file: str, to_path: str = ".") -> None:
     output_file = f"{file}.tar"
 
     try:
-        command = f"git archive --format=tar --output={output_file} --remote={url} {tag} {file}"
+        command = [
+            "git",
+            "archive",
+            "--format=tar",
+            f"--output={output_file}",
+            f"--remote={url}",
+            tag,
+            file,
+        ]
         git.Git().execute(command)
     except git.exc.GitCommandError as e:
-        ColoredMessage.print(f"Error: Failed to fetch {file} from {url}!")
-        return
+        raise ConnectionError(f"Failed to fetch {file} from {url}!")
+
+    if os.stat(f"{output_file}").st_size == 0:
+        raise FileNotFoundError(f"Unable to get {file} from server!")
 
     tf = tarfile.open(name=output_file, mode="r")
     tf.extractall(path=to_path, filter="data")
@@ -534,8 +585,6 @@ def fetch_file_from_remote(url: str, tag: str, file: str, to_path: str = "."):
 
     if os.path.exists(file):
         os.remove(output_file)
-    else:
-        ColoredMessage.print(f"Warning: File:{file} does not exist after unzipping.")
 
 
 def main():
@@ -650,7 +699,11 @@ def main():
 
     if not args.local_update:
         project_tag = args.tag
-        fetch_file_from_remote(project_url, project_tag, "Project.pfc")
+        try:
+            fetch_file_from_remote(project_url, project_tag, "Project.pfc")
+        except Exception as e:
+            ColoredMessage.print(f"Error: {e}")
+            return
 
     if args.clone:
         print(
