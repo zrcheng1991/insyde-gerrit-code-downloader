@@ -619,7 +619,7 @@ def main():
     args, _ = preparser.parse_known_args()
 
     parser = ArgumentParser(prog=f"Insyde Gerrit Code Downloader", parents=[preparser])
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.0b1")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.0b2")
 
     action_group.required = True
     parser._mutually_exclusive_groups.append(action_group)

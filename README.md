@@ -19,7 +19,8 @@ This is a tool for cloning and updating an entire project described by a Project
 | Date | Version | Comment |
 | :--- | :--- | :--- |
 | 2024/12/04 | v1.0-beta.1 | Initial release. |
-| 2025/04/15 | v1.0-beta.2 | Added remote check & force fetch before checkout; Fixed color display in Windows Terminal. |
+| 2025/04/15 | (n/a) | - Added remote check & force fetch before checkout. <br> - Fixed color display in Windows Terminal. |
+| 2025/04/25 | v1.0-beta.2 | - Solved problems of not working in Linux <br> - Optimized access to submodules. |
 
 ## Terms and Abbreviations
 | Term | Description |
