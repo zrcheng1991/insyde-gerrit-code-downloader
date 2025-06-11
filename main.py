@@ -533,10 +533,14 @@ def remove_unused_feature(incoming_roots: list[Element]) -> None:
                 shutil.rmtree(path)
 
 
-def process_pfc(file_path: Union[str, TextIOWrapper], action: ToolAction) -> None:
+def process_pfc(file_path: str, action: ToolAction, dry_run: bool = False) -> None:
     global project_tag
     global project_url
     global omit_submodules
+
+    if dry_run:
+        ColoredMessage.print("Note: [DRY-RUN] No action will be taken.")
+        return
 
     xml_tree = ET.parse(file_path)
     root_element = xml_tree.getroot()
@@ -671,9 +675,10 @@ def main():
     global override_dict
     global omit_submodules
 
-    preparser = ArgumentParser(add_help=False)
+    parser = ArgumentParser(prog=f"Insyde Gerrit Code Downloader")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.0b2")
 
-    action_group = preparser.add_mutually_exclusive_group()
+    action_group = parser.add_mutually_exclusive_group(required=True)
     action_group.add_argument(
         "-c",
         "--clone",
@@ -693,18 +698,9 @@ def main():
         help="Update repositories with a local Project.pfc.",
     )
 
-    args, _ = preparser.parse_known_args()
-
-    parser = ArgumentParser(prog=f"Insyde Gerrit Code Downloader", parents=[preparser])
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.0b2")
-
-    action_group.required = True
-    parser._mutually_exclusive_groups.append(action_group)
-
     parser.add_argument(
         "-u",
         "--url",
-        required=(args.clone),
         type=str,
         nargs="?",
         help="The URL of the remote repository.",
@@ -712,26 +708,23 @@ def main():
     parser.add_argument(
         "-p",
         "--project-path",
-        required=(args.remote_update or args.local_update),
         type=str,
         nargs="?",
         help="The path to the project folder.",
     )
     parser.add_argument(
-        "-f",
-        "--file",
-        required=(args.local_update),
-        type=argparse.FileType("r", encoding="utf-8"),
-        nargs="?",
-        help="The path to the local Project.pfc.",
-    )
-    parser.add_argument(
         "-t",
         "--tag",
-        required=(args.clone or args.remote_update),
         type=str,
         nargs="?",
         help="The desired tag string.",
+    )
+    parser.add_argument(
+        "-f",
+        "--file",
+        type=str,
+        nargs="?",
+        help="The path to the local Project.pfc.",
     )
     parser.add_argument(
         "-o",
@@ -747,7 +740,29 @@ def main():
         action="store_true",
     )
 
+    # debug arguments
+    parser.add_argument(
+        "--dry-run",
+        help="Validate arguments only; no files read or actions performed.",
+        action="store_true",
+    )
+
     args = parser.parse_args()
+
+    # check requirements
+    if args.clone:
+        if not (args.url and args.tag) and not args.file:
+            parser.error(
+                "Clone requires either -u/--url together with -t/--tag, or -f/--file."
+            )
+        elif args.file and (args.url or args.tag):
+            parser.error("Cannot use -f/--file together with -u/--url or -t/--tag.")
+    elif args.remote_update:
+        if not (args.project_path and args.tag):
+            parser.error("Remote update requires both -p/--project and -t/--tag.")
+    elif args.local_update:
+        if not (args.project_path and args.file):
+            parser.error("Local update requires both -p/--project and -f/--file.")
 
     if args.override and len(args.override) > 0:
         if len(args.override) % 2 != 0:
@@ -758,11 +773,15 @@ def main():
 
     omit_submodules = args.omit_submodules
 
+    # initialize arguments
     if args.clone:
-        project_url = to_ssh(args.url)
+        if args.url:
+            project_url = to_ssh(args.url)
     else:
-        project_path = os.path.normpath(os.path.join(os.getcwd(), args.project_path))
-        if args.remote_update:
+        project_path = os.path.normpath(
+            os.path.join(os.getcwd(), args.project_path)
+        )
+        if args.remote_update and not args.dry_run:
             try:
                 repo = git.Repo(project_path)
                 project_url = repo.remotes[0].url
@@ -774,28 +793,37 @@ def main():
                     f"Error: {project_path} is not a valid GIT repository!"
                 )
 
-    if not args.local_update:
+    if args.tag and not args.local_update:
         project_tag = args.tag
-        try:
-            fetch_file_from_remote(project_url, project_tag, "Project.pfc")
-        except Exception as e:
-            ColoredMessage.print(f"Error: {e}")
-            return
+        if not args.dry_run:
+            try:
+                fetch_file_from_remote(project_url, project_tag, "Project.pfc")
+            except Exception as e:
+                ColoredMessage.print(f"Error: {e}")
+                return
 
     if args.clone:
-        print(
-            f"Clone repositories with the Project.pfc from {project_url} (Tag: {project_tag})"
-        )
-        process_pfc("Project.pfc", ToolAction.CLONE_REPOSITORY)
+        if args.file:
+            print(f"Clone repositories with file: {args.file}")
+            process_pfc(args.file, ToolAction.CLONE_REPOSITORY, dry_run=args.dry_run)
+        else:
+            print(
+                f"Clone repositories with the Project.pfc from {project_url} (Tag: {project_tag})"
+            )
+            process_pfc(
+                "Project.pfc", ToolAction.CLONE_REPOSITORY, dry_run=args.dry_run
+            )
     else:
         if args.remote_update:
             print(
                 f"Update repositories with the remote Project.pfc from {project_url} (Tag: {project_tag})"
             )
-            process_pfc("Project.pfc", ToolAction.UPDATE_REPOSITORY)
+            process_pfc(
+                "Project.pfc", ToolAction.UPDATE_REPOSITORY, dry_run=args.dry_run
+            )
         elif args.local_update:
-            print(f'Update repositories with a local Project.pfc: "{args.file.name}"')
-            process_pfc(args.file, ToolAction.UPDATE_REPOSITORY)
+            print(f'Update repositories with local Project.pfc: "{args.file}"')
+            process_pfc(args.file, ToolAction.UPDATE_REPOSITORY, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
