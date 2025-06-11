@@ -16,11 +16,12 @@ import tarfile
 import xml.etree.ElementTree as ET
 
 from argparse import ArgumentParser
+from contextlib import contextmanager
 from enum import Enum
 from git import Repo, RemoteProgress
 from io import TextIOWrapper
 from packaging.version import Version
-from paramiko import SSHClient, SSHConfig
+from paramiko import SSHClient, SSHConfig, AutoAddPolicy
 from pathlib import Path
 from rich import console, progress
 from scp import SCPClient
@@ -176,8 +177,10 @@ def fetch_with_progress(
     return result
 
 
-def get_commit_msg_hook(host: str, folder_path: str) -> None:
+@contextmanager
+def create_ssh_client(host: str):
     ssh = SSHClient()
+    ssh.set_missing_host_key_policy(AutoAddPolicy())
 
     try:
         config = SSHConfig.from_path(
@@ -193,20 +196,36 @@ def get_commit_msg_hook(host: str, folder_path: str) -> None:
             result.get("user", None),
             key_filename=result.get("identityfile"),
         )
-    except Exception as e:
-        ColoredMessage.print(f"Error: Failed to connect to {host}!")
-        return
 
-    scp = SCPClient(ssh.get_transport())
+    except Exception as e:
+        raise RuntimeError(f"Failed to establish SSH connection to {host}!")
+
     try:
-        scp.get("hooks/commit-msg", os.path.join(folder_path, ".git/hooks/"))
-        ColoredMessage.print(
-            f"Note: The commit-msg hook from {host} has been added to {folder_path}."
-        )
-    except Exception as e:
-        ColoredMessage.print(f"Warning: Failed to get commit-msg hook from {host}!")
+        yield ssh
+    finally:
+        ssh.close()
 
-    scp.close()
+
+def get_commit_msg_hook(host: str, folder_path: str) -> None:
+    try:
+        with create_ssh_client(host) as ssh:
+            with SCPClient(ssh.get_transport()) as scp:
+                try:
+                    scp.get(
+                        "hooks/commit-msg", os.path.join(folder_path, ".git/hooks/")
+                    )
+                    ColoredMessage.print(
+                        f"Note: The commit-msg hook from {host} has been added to {folder_path}."
+                    )
+
+                except:
+                    ColoredMessage.print(
+                        f"Warning: Failed to get commit-msg hook from {host}!"
+                    )
+
+    except Exception as e:
+        ColoredMessage.print(str(e))
+        return
 
 
 def checkout_to_tag(repo: Repo, tag: str, fetch: bool = False) -> Optional[str]:
