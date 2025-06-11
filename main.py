@@ -6,6 +6,7 @@
 
 import argparse
 import colorful as cf
+import difflib
 import git
 import git.exc
 import os
@@ -322,10 +323,67 @@ def clone_submodules(repo: Repo, folder_path: str, absorbgitdirs: bool) -> None:
             repo.git.submodule("update", "--init", f"{submodule.path}")
 
 
+def is_git_url_valid(url: str) -> bool:
+    try:
+        subprocess.check_output(["git", "ls-remote", url], stderr=subprocess.DEVNULL)
+        return True
+    except:
+        return False
+
+
+def fetch_gerrit_projects() -> list[str]:
+    try:
+        with create_ssh_client("gerrit.insyde.com") as ssh:
+            _, stdout, stderr = ssh.exec_command("gerrit ls-projects", timeout=5)
+            err = stderr.read().decode().strip()
+            if err:
+                raise RuntimeError(f"Failed to execute command: gerrit ls-projects!")
+
+            return stdout.read().decode("utf-8").strip().splitlines()
+
+    except Exception as e:
+        ColoredMessage.print(f"Error: {str(e)}")
+        return []
+
+
+def get_suggest_url(url: str) -> str:
+    parsed_url = urlparse(url)
+
+    if "insyde" not in parsed_url.hostname.lower():
+        return None
+
+    path = parsed_url.path.lstrip("/")
+
+    known_paths = fetch_gerrit_projects()
+    if not known_paths:
+        return None
+
+    match = difflib.get_close_matches(path, known_paths, n=1, cutoff=0.7)
+    if not match:
+        return None
+
+    corrected_path = posixpath.join("/", match[0])
+    new_parts = parsed_url._replace(path=corrected_path)
+    return urlunparse(new_parts)
+
+
 def clone_repository(
     url: str, folder_path: str, tag: str = None, shallow: bool = False
 ) -> None:
     global omit_submodules
+
+    if not is_git_url_valid(url):
+        suggest_url = get_suggest_url(url)
+        if not suggest_url:
+            ColoredMessage.print(
+                f"Warning: {url} is not valid, skip cloning the repository."
+            )
+            return
+        else:
+            ColoredMessage.print(
+                f"Warning: {url} is not valid.\n Retry with {suggest_url}..."
+            )
+            url = suggest_url
 
     url_path = urlparse(url).path[1:] if "insyde".casefold() in url.casefold() else url
 
