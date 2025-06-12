@@ -20,7 +20,6 @@ from argparse import ArgumentParser
 from contextlib import contextmanager
 from enum import Enum
 from git import Repo, RemoteProgress
-from io import TextIOWrapper
 from packaging.version import Version
 from paramiko import SSHClient, SSHConfig, AutoAddPolicy
 from pathlib import Path
@@ -239,8 +238,6 @@ def checkout_to_tag(repo: Repo, tag: str, fetch: bool = False) -> Optional[str]:
         )
         tag = "master"
 
-    url_path = urlparse(repo.remotes[0].url).path[1:]
-    tag = override_dict.get(url_path, tag)
     folder_path = os.path.relpath(repo.working_dir)
 
     for tag_ref in repo.tags:
@@ -590,21 +587,22 @@ def process_pfc(file_path: str, action: ToolAction, dry_run: bool = False) -> No
             if repository.find("Type").text.casefold() != "git".casefold():
                 continue
 
+            url = to_ssh(repository.find("Url").text)
+            tag = repository.find("Tag").text if url != project_url else project_tag
+
+            if override_dict:
+                tag = override_dict.get(urlparse(url).path[1:], tag)
+
             if os.path.isdir(root):
                 if is_git_repository(root):
-                    update_repository(root, repository.find("Tag").text)
+                    update_repository(root, tag)
                     continue
                 else:
                     ColoredMessage.print(f"Note: Removing {os.path.relpath(root)}")
                     chmod_recursive(root, 0o777)
                     shutil.rmtree(root)
 
-            url = to_ssh(repository.find("Url").text)
-            clone_repository(
-                url,
-                root,
-                (repository.find("Tag").text if url != project_url else project_tag),
-            )
+            clone_repository(url, root, tag)
 
         """
         Note: This is a workaround for H2O Kernel 5.7,
@@ -624,6 +622,9 @@ def process_pfc(file_path: str, action: ToolAction, dry_run: bool = False) -> No
             url = external.find("./Repository/Url").text
             url = to_ssh(url) if "insyde".casefold() in url.casefold() else url
             tag = external.find("./Repository/Tag").text
+
+            if override_dict:
+                tag = override_dict.get(urlparse(url).path[1:], tag)
 
             if os.path.isdir(folder_path) and is_git_repository(folder_path):
                 repo = Repo(folder_path)
@@ -778,9 +779,7 @@ def main():
         if args.url:
             project_url = to_ssh(args.url)
     else:
-        project_path = os.path.normpath(
-            os.path.join(os.getcwd(), args.project_path)
-        )
+        project_path = os.path.normpath(os.path.join(os.getcwd(), args.project_path))
         if args.remote_update and not args.dry_run:
             try:
                 repo = git.Repo(project_path)
