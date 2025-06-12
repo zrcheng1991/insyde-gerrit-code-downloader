@@ -673,7 +673,7 @@ def fetch_file_from_remote(url: str, tag: str, file: str, to_path: str = ".") ->
 
 def main():
     parser = ArgumentParser(prog=f"Insyde Gerrit Code Downloader")
-    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.0b2")
+    parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.0b3")
 
     action_group = parser.add_mutually_exclusive_group(required=True)
     action_group.add_argument(

@@ -20,7 +20,8 @@ This is a tool for cloning and updating an entire project described by a Project
 | :--- | :--- | :--- |
 | 2024/12/04 | v1.0-beta.1 | Initial release. |
 | 2025/04/15 | (n/a) | - Added remote check & force fetch before checkout. <br> - Fixed color display in Windows Terminal. |
-| 2025/04/25 | v1.0-beta.2 | - Solved problems of not working in Linux <br> - Optimized access to submodules. |
+| 2025/04/25 | v1.0-beta.2 | - Solved problems of not working in Linux. <br> - Optimized access to submodules. |
+| 2025/06/12 | v1.0-beta.3 | - Introduce URL typo auto-correction feature. <br> - Support for -f/--file in clone mode. <br> - Enhance arguments checking mechanism. <br> - Introduce --dry-run for validating arguments. |
 
 ## Terms and Abbreviations
 | Term | Description |
@@ -43,22 +44,23 @@ This is a tool for cloning and updating an entire project described by a Project
 ### Overview of the options
 The following is the text of the description exported by `argparse`:
 ```bash
-usage: Insyde Gerrit Code Downloader [-h] (-c | -ru | -lu) [-v] [-u [URL]] [-p [PROJECT_PATH]] [-f [FILE]] [-t [TAG]] [-o [OVERRIDE ...]] [--omit-submodules]
+usage: Insyde Gerrit Code Downloader [-h] (-c | -ru | -lu) [-v] [-u [URL]] [-p [PROJECT_PATH]] [-f [FILE]] [-t [TAG]] [-o [OVERRIDE ...]] [--omit-submodules] [--dry-run]
 
 options:
   -h, --help            show this help message and exit
+  -v, --version         show program's version number and exit
   -c, --clone           Clone repositories with remote Project.pfc.
   -ru, --remote-update  Update repositories with remote Project.pfc.
   -lu, --local-update   Update repositories with a local Project.pfc.
-  -v, --version         show program's version number and exit
   -u, --url [URL]       The URL of the remote repository.
   -p, --project-path [PROJECT_PATH]
                         The path to the project folder.
-  -f, --file [FILE]     The path to the local Project.pfc.
   -t, --tag [TAG]       The desired tag string.
+  -f, --file [FILE]     The path to the local Project.pfc.
   -o, --override [OVERRIDE ...]
                         Override repository tags described in Project.pfc.
   --omit-submodules     Omit submodules in repositories.
+  --dry-run             Validate arguments only; no files read or actions performed.
 ```
 
 ### Prerequisites
@@ -95,6 +97,14 @@ Cloning H2O-Kernel/Kernel_BaseToolsBin_Rev5.7 to BaseTools:
 ```
 
 There will be multiple progress bars representing the GIT operation and its progress.
+
+In addition, you can still clone the entire project with following command:
+
+```bash
+InsydeGerritCodeDownloader.exe -c -f Project.pfc
+```
+
+This assists developers in writing a Project.pfc and verifying its correctness.
 
 > [!NOTE]
 > To override tags of features, you can provide `-o/--override` with feature name and desired tag as key-value pairs to the tool.<br>
