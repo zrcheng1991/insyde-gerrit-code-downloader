@@ -4,7 +4,6 @@
 #  SPDX-License-Identifier: BSD-2-Clause-Patent
 #
 
-import argparse
 import colorful as cf
 import difflib
 import git
@@ -29,13 +28,6 @@ from typing import Union, Optional
 from urllib.parse import urlparse, urlunparse
 from xml.etree.ElementTree import Element
 
-# global variables
-project_tag = None
-project_url = None
-project_path = None
-override_dict = {}
-omit_submodules = False
-
 # global settings
 cf.use_256_ansi_colors()
 
@@ -43,6 +35,17 @@ cf.use_256_ansi_colors()
 class ToolAction(Enum):
     CLONE_REPOSITORY = 1
     UPDATE_REPOSITORY = 2
+    UNDEFINED = 3
+
+
+class ExecutionContext:
+    def __init__(self):
+        self.action: ToolAction = ToolAction.UNDEFINED
+        self.file: str = "Project.pfc"
+        self.project_path: Optional[str] = None
+        self.override_dict: dict = {}
+        self.omit_submodules: bool = False
+        self.dry_run: bool = False
 
 
 class ColoredMessage:
@@ -365,10 +368,12 @@ def get_suggest_url(url: str) -> str:
 
 
 def clone_repository(
-    url: str, folder_path: str, tag: str = None, shallow: bool = False
+    url: str,
+    folder_path: str,
+    tag: str = None,
+    shallow: bool = False,
+    omit_submodules: bool = False,
 ) -> None:
-    global omit_submodules
-
     if not is_git_url_valid(url):
         suggest_url = get_suggest_url(url)
         if not suggest_url:
@@ -419,9 +424,9 @@ def remove_all_submodules(repo: Repo) -> None:
             shutil.rmtree(path)
 
 
-def update_repository(folder_path: str, tag: str) -> None:
-    global omit_submodules
-
+def update_repository(
+    folder_path: str, tag: str, omit_submodules: bool = False
+) -> None:
     repo = git.Repo(folder_path)
 
     if len(repo.submodules) > 0:
@@ -506,9 +511,7 @@ def is_git_repository(folder_path: str) -> bool:
         return False
 
 
-def remove_unused_feature(incoming_roots: list[Element]) -> None:
-    global project_path
-
+def remove_unused_feature(project_path: str, incoming_roots: list[Element]) -> None:
     current_pfc = os.path.join(project_path, "Project.pfc")
     if not os.path.exists(current_pfc):
         return
@@ -530,16 +533,16 @@ def remove_unused_feature(incoming_roots: list[Element]) -> None:
                 shutil.rmtree(path)
 
 
-def process_pfc(file_path: str, action: ToolAction, dry_run: bool = False) -> None:
-    global project_tag
-    global project_url
-    global omit_submodules
+def process_pfc(context: ExecutionContext) -> None:
+    if context.action == ToolAction.UNDEFINED:
+        ColoredMessage.print("Error: Invalid tool action detected!")
+        return
 
-    if dry_run:
+    if context.dry_run:
         ColoredMessage.print("Note: [DRY-RUN] No action will be taken.")
         return
 
-    xml_tree = ET.parse(file_path)
+    xml_tree = ET.parse(context.file)
     root_element = xml_tree.getroot()
 
     # sort elements to ensure that the top-level folder is created first
@@ -550,9 +553,9 @@ def process_pfc(file_path: str, action: ToolAction, dry_run: bool = False) -> No
     feature_dict = {}
     feature_list = root_element.findall("./Feature")
 
-    if action == ToolAction.UPDATE_REPOSITORY:
+    if context.action == ToolAction.UPDATE_REPOSITORY:
         roots = [element.find("Root").text for element in feature_list]
-        remove_unused_feature(roots)
+        remove_unused_feature(context.project_path, roots)
 
     for feature in feature_list:
         feature_dict[feature.find("Name").text] = feature.find("Version").text
@@ -588,21 +591,23 @@ def process_pfc(file_path: str, action: ToolAction, dry_run: bool = False) -> No
                 continue
 
             url = to_ssh(repository.find("Url").text)
-            tag = repository.find("Tag").text if url != project_url else project_tag
+            tag = repository.find("Tag").text
 
-            if override_dict:
-                tag = override_dict.get(urlparse(url).path[1:], tag)
+            if context.override_dict:
+                tag = context.override_dict.get(urlparse(url).path[1:], tag)
 
             if os.path.isdir(root):
                 if is_git_repository(root):
-                    update_repository(root, tag)
+                    update_repository(
+                        root, tag, omit_submodules=context.omit_submodules
+                    )
                     continue
                 else:
                     ColoredMessage.print(f"Note: Removing {os.path.relpath(root)}")
                     chmod_recursive(root, 0o777)
                     shutil.rmtree(root)
 
-            clone_repository(url, root, tag)
+            clone_repository(url, root, tag, omit_submodules=context.omit_submodules)
 
         """
         Note: This is a workaround for H2O Kernel 5.7,
@@ -612,8 +617,6 @@ def process_pfc(file_path: str, action: ToolAction, dry_run: bool = False) -> No
               Board\\Intel\\RaptorLakePBoardPkg\\BIOS
               Insyde\\InsydeModulePkg\\Library\\OpensslLib\\openssl
         """
-        original_state = omit_submodules
-        omit_submodules = True
         for external in feature.findall("External"):
             if external.find("./Repository/Type").text.casefold() != "git".casefold():
                 continue
@@ -623,12 +626,12 @@ def process_pfc(file_path: str, action: ToolAction, dry_run: bool = False) -> No
             url = to_ssh(url) if "insyde".casefold() in url.casefold() else url
             tag = external.find("./Repository/Tag").text
 
-            if override_dict:
-                tag = override_dict.get(urlparse(url).path[1:], tag)
+            if context.override_dict:
+                tag = context.override_dict.get(urlparse(url).path[1:], tag)
 
             if os.path.isdir(folder_path) and is_git_repository(folder_path):
                 repo = Repo(folder_path)
-                if checkout_to_tag(repo, tag, False) is None:
+                if checkout_to_tag(repo, tag, fetch=False) is None:
                     repo.close()
                     continue
 
@@ -637,8 +640,7 @@ def process_pfc(file_path: str, action: ToolAction, dry_run: bool = False) -> No
                 chmod_recursive(folder_path, 0o777)
                 shutil.rmtree(folder_path)
 
-            clone_repository(url, folder_path, tag, True)
-        omit_submodules = original_state
+            clone_repository(url, folder_path, tag, shallow=True, omit_submodules=True)
 
 
 def fetch_file_from_remote(url: str, tag: str, file: str, to_path: str = ".") -> None:
@@ -670,12 +672,6 @@ def fetch_file_from_remote(url: str, tag: str, file: str, to_path: str = ".") ->
 
 
 def main():
-    global project_url
-    global project_tag
-    global project_path
-    global override_dict
-    global omit_submodules
-
     parser = ArgumentParser(prog=f"Insyde Gerrit Code Downloader")
     parser.add_argument("-v", "--version", action="version", version="%(prog)s 1.0b2")
 
@@ -733,6 +729,7 @@ def main():
         type=str,
         nargs="*",
         action="extend",
+        default=[],
         help="Override repository tags described in Project.pfc.",
     )
     parser.add_argument(
@@ -767,14 +764,20 @@ def main():
 
     if args.override and len(args.override) > 0:
         if len(args.override) % 2 != 0:
-            print("Argument -o/--override requires key-value pairs.")
-            return
-        for index in range(0, len(args.override), 2):
-            override_dict[args.override[index]] = args.override[index + 1]
+            parser.error("Argument -o/--override requires key-value pairs.")
 
-    omit_submodules = args.omit_submodules
+    context = ExecutionContext()
+
+    for index in range(0, len(args.override), 2):
+        context.override_dict[args.override[index]] = args.override[index + 1]
+
+    context.omit_submodules = args.omit_submodules
+    context.dry_run = args.dry_run
 
     # initialize arguments
+    project_url = ""
+    project_path = ""
+
     if args.clone:
         if args.url:
             project_url = to_ssh(args.url)
@@ -787,42 +790,45 @@ def main():
                 repo.close()
             except git.exc.NoSuchPathError:
                 ColoredMessage.print(f"Error: {project_path} is not found!")
+                return
             except git.exc.InvalidGitRepositoryError:
                 ColoredMessage.print(
                     f"Error: {project_path} is not a valid GIT repository!"
                 )
+                return
 
     if args.tag and not args.local_update:
-        project_tag = args.tag
+        if args.tag.casefold() == "master".casefold():
+            context.override_dict[f"{urlparse(project_url).path[1:]}"] = "master"
+
         if not args.dry_run:
             try:
-                fetch_file_from_remote(project_url, project_tag, "Project.pfc")
+                fetch_file_from_remote(project_url, args.tag, "Project.pfc")
             except Exception as e:
                 ColoredMessage.print(f"Error: {e}")
                 return
 
     if args.clone:
+        context.action = ToolAction.CLONE_REPOSITORY
         if args.file:
+            context.file = args.file
             print(f"Clone repositories with file: {args.file}")
-            process_pfc(args.file, ToolAction.CLONE_REPOSITORY, dry_run=args.dry_run)
         else:
             print(
-                f"Clone repositories with the Project.pfc from {project_url} (Tag: {project_tag})"
-            )
-            process_pfc(
-                "Project.pfc", ToolAction.CLONE_REPOSITORY, dry_run=args.dry_run
+                f"Clone repositories with the Project.pfc from {project_url} (Tag: {args.tag})"
             )
     else:
+        context.action = ToolAction.UPDATE_REPOSITORY
+        context.project_path = project_path
         if args.remote_update:
             print(
-                f"Update repositories with the remote Project.pfc from {project_url} (Tag: {project_tag})"
-            )
-            process_pfc(
-                "Project.pfc", ToolAction.UPDATE_REPOSITORY, dry_run=args.dry_run
+                f"Update repositories with the Project.pfc from {project_url} (Tag: {args.tag})"
             )
         elif args.local_update:
-            print(f'Update repositories with local Project.pfc: "{args.file}"')
-            process_pfc(args.file, ToolAction.UPDATE_REPOSITORY, dry_run=args.dry_run)
+            context.file = args.file
+            print(f"Update repositories with file: {args.file}")
+
+    process_pfc(context)
 
 
 if __name__ == "__main__":
