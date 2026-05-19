@@ -106,11 +106,19 @@ Please make sure you are able to access to the remote site first.<br>
   $env:PYTHONPATH = "src"
   python -m InsydeGerritCodeDownloader -h
   ```
+  
 - To generate the Windows executable from source, run:
   ```bat
   build.bat
   ```
-  The script creates `.venv-win`, installs build dependencies, generates `InsydeGerritCodeDownloader.exe`, copies it to the project root, and cleans temporary build output.
+  The script creates `.venv-win`, installs build dependencies, and generates `dist/InsydeGerritCodeDownloader.exe`.
+
+- To generate the Linux executable from source, run:
+  ```bash
+  source build.sh
+  ```
+  The script creates `.venv-linux`, installs build dependencies, and generates `dist/InsydeGerritCodeDownloader`.
+
 - To clean local build artifacts, run:
   ```bat
   build.bat /clean

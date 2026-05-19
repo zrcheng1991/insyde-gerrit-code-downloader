@@ -5,6 +5,7 @@ pushd "%~dp0" >nul
 
 @set OUTPUT_NAME=InsydeGerritCodeDownloader
 @set OUTPUT_FILE_NAME=%OUTPUT_NAME%.exe
+@set DIST_DIR=dist
 @set VENV_DIR=.venv-win
 @set ENTRY_POINT=src\InsydeGerritCodeDownloader\__main__.py
 
@@ -64,24 +65,20 @@ if exist requirements.txt (
     goto :error
 )
 
-@REM Build Windows executable and copy to workspace
-if exist "%OUTPUT_FILE_NAME%" del /q "%OUTPUT_FILE_NAME%"
-
+@REM Build Windows executable
 echo [INFO] Start generating %OUTPUT_FILE_NAME%
-pyinstaller -F "%ENTRY_POINT%" -n "%OUTPUT_NAME%" --paths src --collect-data colorful --upx-exclude python3.dll
+pyinstaller -F "%ENTRY_POINT%" -n "%OUTPUT_NAME%" --distpath "%DIST_DIR%" --paths src --collect-data colorful --upx-exclude python3.dll
 if errorlevel 1 goto :error
 
-if exist "dist\%OUTPUT_FILE_NAME%" (
-    copy /y "dist\%OUTPUT_FILE_NAME%" "%OUTPUT_FILE_NAME%" >nul
-    echo [INFO] Copied dist\%OUTPUT_FILE_NAME% to %OUTPUT_FILE_NAME%
+if exist "%DIST_DIR%\%OUTPUT_FILE_NAME%" (
+    echo [INFO] Generated %DIST_DIR%\%OUTPUT_FILE_NAME%
 ) else (
-    echo [ERROR] Failed to find dist\%OUTPUT_FILE_NAME%.
+    echo [ERROR] Failed to find %DIST_DIR%\%OUTPUT_FILE_NAME%.
     goto :error
 )
 
-@REM Remove build\, dist\, and generated *.spec file
+@REM Remove build\ and generated *.spec file
 if exist build rmdir /q /s build
-if exist dist rmdir /q /s dist
 if exist "%OUTPUT_NAME%.spec" del /q "%OUTPUT_NAME%.spec"
 if exist "%OUTPUT_FILE_NAME%.spec" del /q "%OUTPUT_FILE_NAME%.spec"
 
@@ -91,7 +88,7 @@ exit /b 0
 
 :usage
 echo Usage:
-echo   build.bat          Generate %OUTPUT_FILE_NAME%
+echo   build.bat          Generate %DIST_DIR%\%OUTPUT_FILE_NAME%
 echo   build.bat /clean   Remove build artifacts and virtual environments
 popd >nul
 exit /b 0
