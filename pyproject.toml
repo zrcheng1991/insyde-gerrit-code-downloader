@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "InsydeGerritCodeDownloader"
+version = "1.0b4"
+authors = [
+    { name = "Tony Cheng" },
+]
+description = "A tool for cloning and updating an entire project described by a Project.pfc."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "colorful==0.5.6",
+    "GitPython==3.1.43",
+    "packaging==24.2",
+    "paramiko==3.5.0",
+    "rich==13.9.4",
+    "scp==0.15.0",
+]
+classifiers = [
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Version Control :: Git",
+]
+license = { file = "LICENSE" }
+
+[project.scripts]
+InsydeGerritCodeDownloader = "InsydeGerritCodeDownloader.core:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pyright]
+include = ["src"]
+extraPaths = ["src"]
+pythonVersion = "3.12"

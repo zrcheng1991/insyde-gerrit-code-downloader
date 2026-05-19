@@ -6,6 +6,7 @@ This is a tool for cloning and updating an entire project described by a Project
 - [Release Note](#release-note)
 - [Features](#features)
 - [Limitations](#limitations)
+- [Project Layout](#project-layout)
 - [Usage](#usage)
   - [Overview of the options](#overview-of-the-options)
   - [Prerequisites](#prerequisites)
@@ -22,6 +23,7 @@ This is a tool for cloning and updating an entire project described by a Project
 | 2025/04/15 | (n/a) | - Added remote check & force fetch before checkout. <br> - Fixed color display in Windows Terminal. |
 | 2025/04/25 | v1.0-beta.2 | - Solved problems of not working in Linux. <br> - Optimized access to submodules. |
 | 2025/06/12 | v1.0-beta.3 | - Introduce URL typo auto-correction feature. <br> - Support for -f/--file in clone mode. <br> - Enhance arguments checking mechanism. <br> - Introduce --dry-run for validating arguments. |
+| 2026/05/19 | v1.0-beta.4 | - Refactored into a `src/` based Python package. <br> - Added `python -m InsydeGerritCodeDownloader` support. <br> - Reorganized modules and cleaned up Pylance/type-check warnings. |
 
 ## Terms and Abbreviations
 | Term | Description |
@@ -34,17 +36,38 @@ This is a tool for cloning and updating an entire project described by a Project
 - Supports overriding tag of features while cloning/updating.
 - Supports omitting submodules while cloning/updating.
 - Check dependencies for each features described in Project.pfc.
+- Supports checking fork dependencies described in Project.pfc.
+- Supports cloning/updating external repositories described in Project.pfc.
+- Suggests a possible Gerrit URL when the provided repository URL is not valid.
 - Automatically get commit-msg hook from host if checking out to master branch.
 
 ## Limitations
 - Supports accessing Insyde Gerrit Server through SSH only.
 - Users must set up SSH configuration for this tool to work properly.
 
+## Project Layout
+The application source now lives under `src/InsydeGerritCodeDownloader/`:
+
+```text
+src/InsydeGerritCodeDownloader/
+  __main__.py      # python -m entry point
+  core.py          # command orchestration
+  config.py        # argparse setup, validation, and constants
+  pfc.py           # Project.pfc parsing and feature processing
+  git_ops.py       # clone/update/submodule/archive Git operations and progress display
+  gerrit.py        # Gerrit SSH helpers
+  console.py       # colored output helper
+  utils.py         # path and XML utility functions
+```
+
 ## Usage
 ### Overview of the options
 The following is the text of the description exported by `argparse`:
 ```bash
-usage: Insyde Gerrit Code Downloader [-h] (-c | -ru | -lu) [-v] [-u [URL]] [-p [PROJECT_PATH]] [-f [FILE]] [-t [TAG]] [-o [OVERRIDE ...]] [--omit-submodules] [--dry-run]
+usage: Insyde Gerrit Code Downloader [-h] [-v] (-c | -ru | -lu) [-u [URL]]
+                                     [-p [PROJECT_PATH]] [-t [TAG]]
+                                     [-f [FILE]] [-o [OVERRIDE ...]]
+                                     [--omit-submodules] [--dry-run]
 
 options:
   -h, --help            show this help message and exit
@@ -60,7 +83,8 @@ options:
   -o, --override [OVERRIDE ...]
                         Override repository tags described in Project.pfc.
   --omit-submodules     Omit submodules in repositories.
-  --dry-run             Validate arguments only; no files read or actions performed.
+  --dry-run             Resolve Project.pfc and validate repositories without
+                        clone/update/remove operations.
 ```
 
 ### Prerequisites
@@ -71,7 +95,27 @@ Please make sure you are able to access to the remote site first.<br>
   - Please use command `ssh -T [URL]` in command prompt to test the connection.
 
 - The tool clones the entire project to where it exists. Therefore, please copy the executable file to the folder where you want to save the project.
-- If you want to run the Python script directly, please use `pip install -r requirements.txt` to install the required dependency modules.
+- If you want to run from Python source, please use `pip install -r requirements.txt` to install the required dependency modules.
+- To enable package/module execution, install the project in editable mode:
+  ```bash
+  python -m pip install -e .
+  python -m InsydeGerritCodeDownloader -h
+  ```
+- During local development without installing the package, add `src` to `PYTHONPATH` first:
+  ```powershell
+  $env:PYTHONPATH = "src"
+  python -m InsydeGerritCodeDownloader -h
+  ```
+- To generate the Windows executable from source, run:
+  ```bat
+  build.bat
+  ```
+  The script creates `.venv-win`, installs build dependencies, generates `InsydeGerritCodeDownloader.exe`, copies it to the project root, and cleans temporary build output.
+- To clean local build artifacts, run:
+  ```bat
+  build.bat /clean
+  ```
+  This removes `build/`, `dist/`, `.venv/`, `.venv-win/`, `.venv-linux/`, `__pycache__/`, and generated `.spec` files.
 
 > [!NOTE]
 > This tool was developed using Python **3.13.0**. It is recommended that you use the same (or newer) version to ensure proper execution.
@@ -118,8 +162,23 @@ This assists developers in writing a Project.pfc and verifying its correctness.
 > By default, it will clone submodules for each repository excepts for the "externals".
 > If you would like to omit the submodules, just provide --omit-submodules to the tool.
 
+> [!NOTE]
+> If a Gerrit repository URL is not valid, the tool will try to suggest a similar repository URL and retry with it.
+
+> [!NOTE]
+> External repositories described in Project.pfc will be cloned shallowly without submodules.
+
+> [!NOTE]
+> To inspect the resolved operations without changing local repositories, append `--dry-run` to clone or update commands.
+> The tool will still read Project.pfc and validate repository access, but clone, update, and remove operations will be skipped.
+> ```bash
+> InsydeGerritCodeDownloader.exe -c -f Project.pfc --dry-run
+> InsydeGerritCodeDownloader.exe -ru -p Board\Intel\RaptorLakePBoardPkg -t 05.70.42 --dry-run
+> ```
+
 > [!CAUTION]
 > This tool checks dependencies for each features described in Project.pfc.
+> Fork dependencies described in Project.pfc are also checked.
 > If any of the features do not meet the requirements, it will prompt and display the following message:
 > ```bash
 > Warning: Dependency of Kernel-Base is not satisfied!
