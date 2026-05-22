@@ -222,7 +222,9 @@ def clone_submodules(repo: Repo, folder_path: str, absorbgitdirs: bool) -> None:
             else submodule.url
         )
         if is_relative_url(url):
-            url = resolve_relative_url(repo.remotes.origin.url.removesuffix(".git"), url)
+            url = resolve_relative_url(
+                repo.remotes.origin.url.removesuffix(".git"), url
+            )
 
         if absorbgitdirs:
             os.makedirs(submodule_path, exist_ok=True)
@@ -326,9 +328,7 @@ def clone_repository(
     try:
         if shallow and tag is not None:
             print(f"Cloning {url_path} ({tag}) to {folder_display_path}:")
-            repo = Repo.clone_from(
-                url, folder_path, progress_bar, branch=tag, depth=1
-            )
+            repo = Repo.clone_from(url, folder_path, progress_bar, branch=tag, depth=1)
         else:
             print(f"Cloning {url_path} to {folder_display_path}:")
             repo = Repo.clone_from(url, folder_path, progress_bar)
@@ -368,12 +368,22 @@ def remove_all_submodules(repo: Repo) -> None:
 
 
 def update_repository(
-    folder_path: str, tag: str, omit_submodules: bool = False
+    folder_path: str,
+    tag: str,
+    omit_submodules: bool = False,
+    dry_run: bool = False,
 ) -> None:
+    if dry_run:
+        print(f"[DRY-RUN] Checking out {display_path(folder_path)} to {tag}")
+        return
+
     repo = Repo(folder_path)
 
     try:
         checked_out_tag = checkout_to_tag(repo, tag, True)
+        if checked_out_tag is None:
+            return
+
         if checked_out_tag == "master":
             host = urlparse(repo.remotes[0].url).hostname
             if host is None:

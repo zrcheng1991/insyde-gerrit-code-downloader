@@ -37,7 +37,7 @@ class ExecutionContext:
     def __init__(self):
         self.action: ToolAction = ToolAction.UNDEFINED
         self.file: str = "Project.pfc"
-        self.project_path: str | None = None
+        self.workspace: str = os.getcwd()
         self.override_dict: dict[str, str] = {}
         self.omit_submodules: bool = False
         self.dry_run: bool = False
@@ -118,7 +118,10 @@ def collect_fork_dependency_dict(feature_list: list[Element]) -> tuple[dict, dic
                     )
                     continue
 
-                if name in fork_dependency_dict and fork_dependency_dict[name] != version:
+                if (
+                    name in fork_dependency_dict
+                    and fork_dependency_dict[name] != version
+                ):
                     ColoredMessage.print(
                         f"Warning: Fork dependency {name} is described more than once."
                     )
@@ -159,6 +162,23 @@ def get_repository_tag(repository: Element | None) -> str:
         return "master"
 
     return tag
+
+
+def get_override_tag(
+    override_dict: dict[str, str], feature_name: str, url: str, default_tag: str
+) -> str:
+    if not override_dict:
+        return default_tag
+
+    candidates = [
+        urlparse(url).path[1:],
+        feature_name,
+    ]
+    for candidate in candidates:
+        if candidate in override_dict:
+            return override_dict[candidate]
+
+    return default_tag
 
 
 def remove_unused_feature(
@@ -204,15 +224,25 @@ def process_pfc(context: ExecutionContext) -> None:
         ColoredMessage.print("Error: Invalid tool action detected!")
         return
 
-    xml_tree = ET.parse(context.file)
+    if not os.path.exists(context.file):
+        ColoredMessage.print(f"Error: {context.file} is not found!")
+        return
+    elif os.path.isdir(context.file):
+        ColoredMessage.print(f"Error: {context.file} is not a file!")
+        return
+
+    try:
+        xml_tree = ET.parse(context.file)
+    except ET.ParseError as e:
+        ColoredMessage.print(f"Error: Failed to parse {context.file}: {e}")
+        return
+
     root_element = xml_tree.getroot()
 
     if context.dry_run:
         ColoredMessage.print(
             "Note: [DRY-RUN] Repository access is allowed, but clone/update/remove operations will be skipped."
         )
-
-    base_path = context.project_path if context.project_path else os.getcwd()
 
     root_element[:] = sorted(
         root_element,
@@ -226,7 +256,7 @@ def process_pfc(context: ExecutionContext) -> None:
         roots = [
             get_required_text(element, "Root", "Feature") for element in feature_list
         ]
-        remove_unused_feature(base_path, roots, dry_run=context.dry_run)
+        remove_unused_feature(context.workspace, roots, dry_run=context.dry_run)
 
     for feature in feature_list:
         name = get_required_text(feature, "Name", "Feature")
@@ -242,12 +272,10 @@ def process_pfc(context: ExecutionContext) -> None:
     for feature in feature_list:
         name = get_required_text(feature, "Name", "Feature")
         root = os.path.normpath(get_required_text(feature, "Root", f"Feature {name}"))
-        root_path = safe_join(base_path, root)
+        root_path = safe_join(context.workspace, root)
 
         for dependency in feature.findall("Dependency"):
-            target_name = get_required_text(
-                dependency, "Name", f"Dependency of {name}"
-            )
+            target_name = get_required_text(dependency, "Name", f"Dependency of {name}")
             target_version = get_required_text(
                 dependency, "Version", f"Dependency {target_name} of {name}"
             )
@@ -289,10 +317,25 @@ def process_pfc(context: ExecutionContext) -> None:
             url = to_ssh(get_required_text(repository, "Url", f"Repository of {name}"))
             tag = get_repository_tag(repository)
 
-            if context.override_dict:
-                tag = context.override_dict.get(urlparse(url).path[1:], tag)
+            tag = get_override_tag(context.override_dict, name, url, tag)
 
             if context.dry_run:
+                if context.action == ToolAction.UPDATE_REPOSITORY and os.path.isdir(
+                    root_path
+                ):
+                    if is_git_repository(root_path):
+                        update_repository(
+                            root_path,
+                            tag,
+                            omit_submodules=context.omit_submodules,
+                            dry_run=True,
+                        )
+                        continue
+
+                    ColoredMessage.print(
+                        f"Note: [DRY-RUN] Removing {os.path.relpath(root_path)}"
+                    )
+
                 clone_repository(
                     url,
                     root_path,
@@ -309,9 +352,7 @@ def process_pfc(context: ExecutionContext) -> None:
                     )
                     continue
                 else:
-                    ColoredMessage.print(
-                        f"Note: Removing {os.path.relpath(root_path)}"
-                    )
+                    ColoredMessage.print(f"Note: Removing {os.path.relpath(root_path)}")
                     chmod_recursive(root_path, 0o777)
                     shutil.rmtree(root_path)
 
@@ -344,10 +385,23 @@ def process_pfc(context: ExecutionContext) -> None:
             url = to_ssh(url) if "insyde".casefold() in url.casefold() else url
             tag = get_repository_tag(repository)
 
-            if context.override_dict:
-                tag = context.override_dict.get(urlparse(url).path[1:], tag)
+            tag = get_override_tag(context.override_dict, name, url, tag)
 
             if context.dry_run:
+                if os.path.isdir(folder_path) and is_git_repository(folder_path):
+                    update_repository(
+                        folder_path,
+                        tag,
+                        omit_submodules=True,
+                        dry_run=True,
+                    )
+                    continue
+
+                if os.path.isdir(folder_path) and os.listdir(folder_path):
+                    ColoredMessage.print(
+                        f"Note: [DRY-RUN] Removing {os.path.relpath(folder_path)}"
+                    )
+
                 clone_repository(
                     url,
                     folder_path,

@@ -107,8 +107,10 @@ def validate_arguments(
         if not (args.project_path and args.tag):
             parser.error("Remote update requires both -p/--project and -t/--tag.")
     elif args.local_update:
-        if not (args.project_path and args.file):
-            parser.error("Local update requires both -p/--project and -f/--file.")
+        if not (args.project_path or args.file):
+            parser.error("Local update requires -p/--project or -f/--file.")
+        elif args.project_path and args.file:
+            parser.error("Cannot use -p/--project together with -f/--file.")
 
     if args.override and len(args.override) > 0:
         if len(args.override) % 2 != 0:

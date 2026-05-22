@@ -141,6 +141,7 @@ The tool will gets the Project.pfc from the board package on the server, and the
 When the job starts, you will see the following message:
 
 ```bash
+Workspace: D:\dev\Rev5.7
 Clone repositories with the Project.pfc from ssh://gerrit.insyde.com:29418/H2O-Kernel/Kernel_RaptorLake_PBoard_Rev5.7 (Tag: 05.70.48)
 Cloning H2O-Kernel/Kernel_BaseToolsBin_Rev5.7 to BaseTools:
   Counting objects  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 100% ET 0:00:00 done
@@ -159,7 +160,8 @@ InsydeGerritCodeDownloader.exe -c -f Project.pfc
 This assists developers in writing a Project.pfc and verifying its correctness.
 
 > [!NOTE]
-> To override tags of features, you can provide `-o/--override` with feature name and desired tag as key-value pairs to the tool.<br>
+> To override tags of features, you can provide `-o/--override` with key-value pairs to the tool.<br>
+> The key must be the `<Name>` in Project.pfc or the Gerrit sub-path `<GROUP>/<FEATURE_NAME>`.
 > For example, if feature `InsydePlatformInfoPkg` is set to `02.01.08.0007` in Project.pfc, but you want to use a newer tag, the command will be as following:
 > ```bash
 > InsydeGerritCodeDownloader.exe ... -o InsydePlatformInfoPkg 02.01.08.0009
@@ -179,6 +181,7 @@ This assists developers in writing a Project.pfc and verifying its correctness.
 > [!NOTE]
 > To inspect the resolved operations without changing local repositories, append `--dry-run` to clone or update commands.
 > The tool will still read Project.pfc and validate repository access, but clone, update, and remove operations will be skipped.
+> In update mode, existing repositories are shown as checkout operations, while missing repositories are shown as clone operations.
 > ```bash
 > InsydeGerritCodeDownloader.exe -c -f Project.pfc --dry-run
 > InsydeGerritCodeDownloader.exe -ru -p Board\Intel\RaptorLakePBoardPkg -t 05.70.42 --dry-run
@@ -210,17 +213,25 @@ However, if you want to update the entire project with a local Project.pfc.
 You can update the entire project with following command:
 
 ```bash
-InsydeGerritCodeDownloader.exe -lu -p Board\Intel\RaptorLakePBoardPkg -f Project.pfc
+InsydeGerritCodeDownloader.exe -lu -f Project.pfc -t 05.70.42
 ```
+
+You can also point to a project folder and use the Project.pfc inside it:
+
+```bash
+InsydeGerritCodeDownloader.exe -lu -p Board\Intel\RaptorLakePBoardPkg -t 05.70.42
+```
+
+Please do not use `-p/--project-path` and `-f/--file` together.
 
 > [!CAUTION]
 > Before updating the entire project, please make sure the working trees of all repositories are clean.
 
 > [!NOTE]
-> The tool will remove submodules before checking out a repository to tag.
+> The tool will remove submodules before checking out a repository to a different tag.
 > Because the submodule is cloned shallowly, it does not have a complete history.
 
-When updating (or switching) to a tag, The tool compares the local and remote Project.pfc to find the different features. For those different features, if the path specified in `<Root>` exists and it is a valid GIT repository, the tool will remove it before updating.
+When updating (or switching) to a tag, the tool compares the Project.pfc in the workspace with the incoming Project.pfc to find the different features. For `-ru`, the incoming Project.pfc is fetched from the remote repository. For `-lu`, the incoming Project.pfc is the local file specified by `-f`, or the Project.pfc inside the folder specified by `-p`. For those different features, if the path specified in `<Root>` exists and it is a valid GIT repository, the tool will remove it before updating.
 
 When removing the folders, you will see the following message:
 ```bash

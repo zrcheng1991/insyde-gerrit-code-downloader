@@ -20,4 +20,3 @@ class ColoredMessage:
             print(message)
         else:
             print(f"{color_code}{message}{cf.reset}")
-

@@ -22,6 +22,7 @@ from .pfc import ExecutionContext, ToolAction, process_pfc
 
 def run(args: Namespace) -> None:
     context = ExecutionContext()
+    print(f"Workspace: {context.workspace}")
 
     for index in range(0, len(args.override), 2):
         context.override_dict[args.override[index]] = args.override[index + 1]
@@ -31,24 +32,23 @@ def run(args: Namespace) -> None:
     temporary_directory = None
 
     project_url = ""
-    project_path = ""
 
     if args.clone:
         if args.url:
             project_url = to_ssh(args.url)
-    else:
-        project_path = os.path.normpath(os.path.join(os.getcwd(), args.project_path))
+    elif args.remote_update:
+        repository_path = os.path.normpath(os.path.join(os.getcwd(), args.project_path))
         if args.remote_update:
             repo = None
             try:
-                repo = Repo(project_path)
+                repo = Repo(repository_path)
                 project_url = repo.remotes[0].url
             except NoSuchPathError:
-                ColoredMessage.print(f"Error: {project_path} is not found!")
+                ColoredMessage.print(f"Error: {repository_path} is not found!")
                 return
             except InvalidGitRepositoryError:
                 ColoredMessage.print(
-                    f"Error: {project_path} is not a valid GIT repository!"
+                    f"Error: {repository_path} is not a valid GIT repository!"
                 )
                 return
             finally:
@@ -85,14 +85,16 @@ def run(args: Namespace) -> None:
             )
     else:
         context.action = ToolAction.UPDATE_REPOSITORY
-        context.project_path = project_path
         if args.remote_update:
             print(
                 f"Update repositories with the Project.pfc from {project_url} (Tag: {args.tag})"
             )
         elif args.local_update:
-            context.file = args.file
-            print(f"Update repositories with file: {args.file}")
+            if args.project_path:
+                context.file = os.path.join(args.project_path, "Project.pfc")
+            elif args.file:
+                context.file = args.file
+            print(f"Update repositories with file: {context.file}")
 
     try:
         process_pfc(context)
