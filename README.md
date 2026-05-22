@@ -24,6 +24,7 @@ This is a tool for cloning and updating an entire project described by a Project
 | 2025/04/25 | v1.0-beta.2 | - Solved problems of not working in Linux. <br> - Optimized access to submodules. |
 | 2025/06/12 | v1.0-beta.3 | - Introduce URL typo auto-correction feature. <br> - Support for -f/--file in clone mode. <br> - Enhance arguments checking mechanism. <br> - Introduce --dry-run for validating arguments. |
 | 2026/05/19 | v1.0-beta.4 | - Refactored into a `src/` based Python package. <br> - Added `python -m InsydeGerritCodeDownloader` support. <br> - Reorganized modules and cleaned up Pylance/type-check warnings. |
+| 2026/05/22 | v1.0-beta.5 | - Fixed update workspace handling so `-p` is no longer treated as the project root. <br> - Improved local update to use either `-f` Project.pfc or the Project.pfc inside `-p`. <br> - Corrected `--dry-run` update output for existing repositories. <br> - Prevented unnecessary submodule cleanup when the target tag is unchanged. <br> - Limited override matching to Project.pfc feature name or Gerrit sub-path. |
 
 ## Terms and Abbreviations
 | Term | Description |
@@ -213,13 +214,13 @@ However, if you want to update the entire project with a local Project.pfc.
 You can update the entire project with following command:
 
 ```bash
-InsydeGerritCodeDownloader.exe -lu -f Project.pfc -t 05.70.42
+InsydeGerritCodeDownloader.exe -lu -f Project.pfc
 ```
 
 You can also point to a project folder and use the Project.pfc inside it:
 
 ```bash
-InsydeGerritCodeDownloader.exe -lu -p Board\Intel\RaptorLakePBoardPkg -t 05.70.42
+InsydeGerritCodeDownloader.exe -lu -p Board\Intel\RaptorLakePBoardPkg
 ```
 
 Please do not use `-p/--project-path` and `-f/--file` together.

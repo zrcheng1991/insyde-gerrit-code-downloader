@@ -8,7 +8,7 @@ from argparse import ArgumentParser, Namespace
 from collections.abc import Sequence
 
 PROGRAM_NAME = "Insyde Gerrit Code Downloader"
-VERSION = "1.0b4"
+VERSION = "1.0b5"
 
 REQUIRED_MAJOR = 3
 REQUIRED_MINOR = 12
